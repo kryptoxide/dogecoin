@@ -1,0 +1,136 @@
+name: Fast IBD Win64 Build and Release
+
+on:
+  push:
+    branches:
+      - fast-ibd-1.14.9
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-win64:
+    name: Build Dogecoin Core 1.14.9 Fast IBD (Win64)
+    runs-on: ubuntu-22.04
+    env:
+      HOST: x86_64-w64-mingw32
+      RELEASE_TAG: v1.14.9-fast-ibd32
+      RELEASE_BASENAME: dogecoin-1.14.9-fast-ibd32-win64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify fast-IBD peer limits
+        shell: bash
+        run: |
+          set -euxo pipefail
+          grep -F 'static const int MAX_OUTBOUND_CONNECTIONS = 32;' src/net.h
+          grep -F 'static const int MAX_ADDNODE_CONNECTIONS = 16;' src/net.h
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential libtool autotools-dev automake pkg-config \
+            bsdmainutils curl ca-certificates ccache rsync git procps \
+            bison python3 python3-pip python3-setuptools python3-wheel \
+            nsis g++-mingw-w64-x86-64 zip
+          sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+
+      - name: Build deterministic dependencies
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" -C depends HOST="$HOST"
+
+      - name: Configure Dogecoin Core
+        shell: bash
+        run: |
+          set -euxo pipefail
+          ./autogen.sh
+          ./configure \
+            --prefix="$PWD/depends/$HOST" \
+            --enable-gui=qt5 \
+            --disable-tests \
+            --disable-bench \
+            LDFLAGS=-static-libstdc++
+
+      - name: Build and install
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" install
+
+      - name: Package Win64 binaries
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p "release/$RELEASE_BASENAME"
+          for exe in dogecoin-qt.exe dogecoind.exe dogecoin-cli.exe dogecoin-tx.exe; do
+            test -f "depends/$HOST/bin/$exe"
+            cp "depends/$HOST/bin/$exe" "release/$RELEASE_BASENAME/"
+          done
+          cat > "release/$RELEASE_BASENAME/FAST-IBD.txt" <<'EOF'
+          Dogecoin Core 1.14.9 Fast IBD Win64
+
+          Source base: upstream Dogecoin Core v1.14.9
+          Modification:
+            MAX_OUTBOUND_CONNECTIONS = 32 (upstream: 8)
+            MAX_ADDNODE_CONNECTIONS  = 16 (upstream: 8)
+
+          Intended use: faster initial block download on systems with enough
+          bandwidth, CPU, storage throughput, and a sufficiently populated peers.dat.
+
+          This is an unofficial custom build from kryptoxide/dogecoin.
+          EOF
+          (
+            cd release
+            zip -9 -r "$RELEASE_BASENAME.zip" "$RELEASE_BASENAME"
+            sha256sum "$RELEASE_BASENAME.zip" > "$RELEASE_BASENAME.zip.sha256"
+          )
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.RELEASE_BASENAME }}
+          path: |
+            release/${{ env.RELEASE_BASENAME }}.zip
+            release/${{ env.RELEASE_BASENAME }}.zip.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/fast-ibd-1.14.9'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          ZIP="release/$RELEASE_BASENAME.zip"
+          SUM="release/$RELEASE_BASENAME.zip.sha256"
+          NOTES=$(cat <<'EOF'
+          Unofficial Dogecoin Core 1.14.9 Win64 build optimized for faster initial block download.
+
+          Changes from upstream v1.14.9:
+          - Automatic outbound connection limit: 8 -> 32
+          - addnode outbound connection limit: 8 -> 16
+          - No consensus, wallet, RPC, P2P protocol, or block-validation rules changed.
+
+          Built from the `fast-ibd-1.14.9` branch by GitHub Actions. SHA-256 is attached alongside the ZIP.
+          EOF
+          )
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "$ZIP" "$SUM" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$ZIP" "$SUM" \
+              --target "$GITHUB_SHA" \
+              --title "Dogecoin Core 1.14.9 Fast IBD Win64 (32 outbound)" \
+              --notes "$NOTES"
+          fi
