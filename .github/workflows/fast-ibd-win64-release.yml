@@ -26,12 +26,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify fast-IBD peer limits
+      - name: Verify fast-IBD peer and socket limits
         shell: bash
         run: |
           set -euxo pipefail
           grep -F 'static const int MAX_OUTBOUND_CONNECTIONS = 32;' src/net.h
           grep -F 'static const int MAX_ADDNODE_CONNECTIONS = 16;' src/net.h
+          grep -F '#define FD_SETSIZE 4096' src/compat.h
 
       - name: Install build dependencies
         shell: bash
@@ -83,9 +84,15 @@ jobs:
           Dogecoin Core 1.14.9 Fast IBD Win64
 
           Source base: upstream Dogecoin Core v1.14.9
-          Modification:
+          Modifications:
             MAX_OUTBOUND_CONNECTIONS = 32 (upstream: 8)
             MAX_ADDNODE_CONNECTIONS  = 16 (upstream: 8)
+            FD_SETSIZE               = 4096 (upstream: 1024)
+
+          With one listening bind and the 16 addnode reservation, the Windows
+          -maxconnections ceiling is approximately 4079 rather than the stock
+          approximately 1015. The exact practical limit can be lower depending
+          on runtime resources and configuration.
 
           Intended use: faster initial block download on systems with enough
           bandwidth, CPU, storage throughput, and a sufficiently populated peers.dat.
@@ -117,11 +124,13 @@ jobs:
           ZIP="release/$RELEASE_BASENAME.zip"
           SUM="release/$RELEASE_BASENAME.zip.sha256"
           NOTES=$(cat <<'EOF'
-          Unofficial Dogecoin Core 1.14.9 Win64 build optimized for faster initial block download.
+          Unofficial Dogecoin Core 1.14.9 Win64 build optimized for faster initial block download and a higher Windows connection ceiling.
 
           Changes from upstream v1.14.9:
           - Automatic outbound connection limit: 8 -> 32
           - addnode outbound connection limit: 8 -> 16
+          - Windows FD_SETSIZE: 1024 -> 4096
+          - Typical Windows -maxconnections ceiling with one bind and 16 addnode slots: about 4079 instead of about 1015
           - No consensus, wallet, RPC, P2P protocol, or block-validation rules changed.
 
           Built from the `fast-ibd-1.14.9` branch by GitHub Actions. SHA-256 is attached alongside the ZIP.
