@@ -61,9 +61,9 @@ static const unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000;
 /** Maximum length of strSubVer in `version` message */
 static const unsigned int MAX_SUBVERSION_LENGTH = 256;
 /** Maximum number of automatic outgoing nodes */
-static const int MAX_OUTBOUND_CONNECTIONS = 8;
+static const int MAX_OUTBOUND_CONNECTIONS = 32;
 /** Maximum number of addnode outgoing nodes */
-static const int MAX_ADDNODE_CONNECTIONS = 8;
+static const int MAX_ADDNODE_CONNECTIONS = 16;
 /** Number of peers protected from eviction: 4 random, 8 with lowest ping, 4 that sent recent tx, 4 that sent recent blocks */
 static const int PROTECTED_INBOUND_PEERS = 4 + 8 + 4 + 4;
 /** -listen default */
@@ -170,7 +170,7 @@ public:
             if (NodeFullyConnected(node))
                 func(node);
         }
-    };
+    }
 
     template<typename Callable>
     void ForEachNode(Callable&& func) const
@@ -180,7 +180,7 @@ public:
             if (NodeFullyConnected(node))
                 func(node);
         }
-    };
+    }
 
     template<typename Callable, typename CallableAfter>
     void ForEachNodeThen(Callable&& pre, CallableAfter&& post)
@@ -191,7 +191,7 @@ public:
                 pre(node);
         }
         post();
-    };
+    }
 
     template<typename Callable, typename CallableAfter>
     void ForEachNodeThen(Callable&& pre, CallableAfter&& post) const
@@ -202,7 +202,7 @@ public:
                 pre(node);
         }
         post();
-    };
+    }
 
     // Addrman functions
     size_t GetAddressCount() const;
@@ -535,7 +535,7 @@ public:
     CDataStream vRecv;              // received message data
     unsigned int nDataPos;
 
-    int64_t nTime;                  // time (in microseconds) of message receipt.
+    int64_t nTime;                  // Time (in microseconds) of message receipt.
 
     CNetMessage(const CMessageHeader::MessageStartChars& pchMessageStartIn, int nTypeIn, int nVersionIn) : hdrbuf(nTypeIn, nVersionIn), hdr(pchMessageStartIn), vRecv(nTypeIn, nVersionIn) {
         hdrbuf.resize(24);
